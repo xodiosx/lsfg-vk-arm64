@@ -1,0 +1,77 @@
+name: Build lsfg-vk Android (Bionic for Termux)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      # ------------------------------------------------------------
+      # 1. Checkout the Android-specific lsfg-vk repository
+      # ------------------------------------------------------------
+      - name: Checkout lsfg-vk-android
+        uses: actions/checkout@v4
+        with:
+          repository: xXJSONDeruloXx/lsfg-vk-android
+          ref: main   # or a specific commit/tag
+          fetch-depth: 0
+
+      # ------------------------------------------------------------
+      # 2. Install host build tools
+      # ------------------------------------------------------------
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+
+      # ------------------------------------------------------------
+      # 3. Setup Android NDK (same version as  Wine workflow)
+      # ------------------------------------------------------------
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+
+      # ------------------------------------------------------------
+      # 4. Configure and build with NDK toolchain
+      # ------------------------------------------------------------
+      - name: Build lsfg-vk for Android
+        run: |
+          # Use NDK toolchain file (same as in the build script)
+          TOOLCHAIN="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+          ABI="arm64-v8a"
+          API="28"   # adjust if needed (Termux requires >=21)
+          BUILD_DIR="build-android"
+
+          cmake -S . -B "${BUILD_DIR}" \
+            -DCMAKE_TOOLCHAIN_FILE="${TOOLCHAIN}" \
+            -DANDROID_ABI="${ABI}" \
+            -DANDROID_PLATFORM="android-${API}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLSFGVK_ANDROID_WINE=ON \
+            -DVK_USE_PLATFORM_ANDROID_KHR=1 \
+            -DCMAKE_INSTALL_PREFIX=./install
+
+          cmake --build "${BUILD_DIR}" --parallel $(nproc)
+
+      # ------------------------------------------------------------
+      # 5. Install and collect artifacts
+      # ------------------------------------------------------------
+      - name: Prepare artifacts
+        run: |
+          mkdir -p install/lib install/share/vulkan/implicit_layer.d
+          cp build-android/liblsfg-vk-layer.so install/lib/
+          cp VkLayer_LS_frame_generation.json install/share/vulkan/implicit_layer.d/
+          # Fix library_path in the JSON to the expected Termux home path
+          sed -i 's|"library_path":.*|"library_path": "/data/data/com.termux/files/home/.local/lib/liblsfg-vk-layer.so"|' \
+            install/share/vulkan/implicit_layer.d/VkLayer_LS_frame_generation.json
+
+      # ------------------------------------------------------------
+      # 6. Upload artifact
+      # ------------------------------------------------------------
+      - name: Upload lsfg-vk Android artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lsfg-vk-android-bionic
+          path: install/*
