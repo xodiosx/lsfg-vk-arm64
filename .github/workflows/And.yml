@@ -10,12 +10,10 @@ jobs:
       # ------------------------------------------------------------
       # 1. Checkout the Android-specific lsfg-vk repository
       # ------------------------------------------------------------
-      - name: Checkout lsfg-vk-android
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: xXJSONDeruloXx/lsfg-vk-android
-          ref: main   # or a specific commit/tag
-          fetch-depth: 0
+          submodules: recursive
 
       # ------------------------------------------------------------
       # 2. Install host build tools
