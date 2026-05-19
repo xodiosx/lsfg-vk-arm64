@@ -218,7 +218,8 @@ jobs:
             -Dvalgrind=disabled
 
       - name: Build Turnip
-        run: ninja -C build
+        run: #ninja -C build
+             ls
 
       # ----------------------------------------------------------------------
       # lsfg-vk layer build
