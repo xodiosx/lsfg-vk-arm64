@@ -284,11 +284,12 @@ jobs:
           echo "turnip_artifact=turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Package lsfg-vk artifact
+        working-directory: lsfg-vk
         run: |
           mkdir -p lsfg_out
-          cp lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
-          cp target/* lsfg_out/ 2>/dev/null || \
-          find lsfg-vk -name "liblsfg-vk-layer.so" -exec cp {} lsfg_out/ \;
+          cp lsfg-vk/target/. lsfg_out/ 2>/dev/null || true
+          cp .target/. lsfg_out/ 2>/dev/null || true
+          find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \;
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
           echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
 
