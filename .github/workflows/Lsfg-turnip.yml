@@ -286,8 +286,8 @@ jobs:
       - name: Package lsfg-vk artifact
         run: |
           mkdir -p lsfg_out
-          cp lsfg-vk/target/lib/liblsfg-vk-layer.so lsfg_out/ 2>/dev/null || \
-          cp lsfg-vk/build/liblsfg-vk-layer.so lsfg_out/ 2>/dev/null || \
+          cp lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
+          cp target/* lsfg_out/ 2>/dev/null || \
           find lsfg-vk -name "liblsfg-vk-layer.so" -exec cp {} lsfg_out/ \;
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
           echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
