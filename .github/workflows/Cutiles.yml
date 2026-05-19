@@ -1,6 +1,9 @@
 name: Build libcutils (with dependencies)
 
-on: workflow_dispatch
+name: Build libcutils (standalone, with auto‑generated stubs)
+
+on:
+  workflow_dispatch:
 
 jobs:
   build:
@@ -8,7 +11,8 @@ jobs:
     steps:
       - name: Install host tools
         run: |
-          sudo apt update && sudo apt install -y wget unzip
+          sudo apt update
+          sudo apt install -y wget unzip
 
       - name: Setup Android NDK (r27c)
         run: |
@@ -18,59 +22,76 @@ jobs:
           unzip -q ${NDK_ZIP} -d /opt
           echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
 
-      # --- Checkout all needed sources ---
-      - name: Checkout libcutils (full)
+      # Your standalone libcutils repo – it has include/cutils and include/private
+      - name: Checkout libcutils
         uses: actions/checkout@v4
         with:
-          repository: aosp-mirror/platform_system_core
-          sparse-checkout: libcutils
+          repository: D-os/libcutils
           path: libcutils
 
-      - name: Checkout liblog
-        uses: actions/checkout@v4
-        with:
-          repository: aosp-mirror/platform_system_core
-          sparse-checkout: liblog
-          path: liblog
-
-      - name: Checkout libbase
-        uses: actions/checkout@v4
-        with:
-          repository: aosp-mirror/platform_system_libbase
-          path: libbase
-
-      # --- Build liblog (static) ---
-      - name: Build liblog
-        working-directory: liblog/liblog
+      # -----------------------------------------------------------------
+      # Generate missing headers that libcutils expects but aren’t in the repo
+      # -----------------------------------------------------------------
+      - name: Create stubs for external AOSP headers
         run: |
-          TARGET=aarch64-linux-android29
-          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-clang++
-          AR=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          mkdir -p stubs/log stubs/android-base
 
-          $CXX -c -fPIC -O2 -std=c++17 \
-            -Iinclude -I../include \
-            log_event_list.cpp log_event_write.cpp logger_read.cpp logger_write.cpp logprint.cpp properties.cpp
+          # --- stub for log/log.h ---
+          cat > stubs/log/log.h << 'EOF'
+          #ifndef _STUB_LOG_H
+          #define _STUB_LOG_H
+          #include <android/log.h>
+          #include <stdarg.h>
+          #include <stdint.h>
 
-          $AR rcs liblog.a *.o
+          /* A few extra macros/types that libcutils uses */
+          #define LOG_EVENT_INT(_data)  0
+          #define LOG_EVENT_LONG(_data) 0
+          #define LOG_EVENT_STRING(_data) 0
 
-      # --- Build libbase (static) ---
-      - name: Build libbase
-        working-directory: libbase
-        run: |
-          TARGET=aarch64-linux-android29
-          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-clang++
-          AR=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          typedef struct android_log_event_list {
+              int dummy;
+          } android_log_event_list;
 
-          # Only the files needed by libcutils (strings.cpp + a few helpers)
-          $CXX -c -fPIC -O2 -std=c++17 \
-            -Iinclude \
-            strings.cpp file.cpp logging.cpp
+          /* Functions normally provided by liblog.so (already present on Android) */
+          extern int __android_log_buf_write(int bufID, int prio, const char *tag, const char *text);
+          extern int __android_log_buf_print(int bufID, int prio, const char *tag, const char *fmt, ...);
+          #endif
+          EOF
 
-          $AR rcs libbase.a *.o
+          # --- stub for android-base/strings.h ---
+          cat > stubs/android-base/strings.h << 'EOF'
+          #ifndef _STUB_ANDROID_BASE_STRINGS_H
+          #define _STUB_ANDROID_BASE_STRINGS_H
+          #include <string>
+          #include <vector>
 
-      # --- Build libcutils (shared, linking everything) ---
-      - name: Build libcutils
-        working-directory: libcutils/libcutils
+          namespace android {
+          namespace base {
+
+          // Minimal Split function – libcutils only needs a simple string splitter
+          static inline std::vector<std::string> Split(const std::string& s,
+                                                       const std::string& delimiters) {
+              std::vector<std::string> result;
+              std::size_t start = 0, end;
+              while ((end = s.find_first_of(delimiters, start)) != std::string::npos) {
+                  if (end > start) result.push_back(s.substr(start, end - start));
+                  start = end + 1;
+              }
+              if (start < s.size()) result.push_back(s.substr(start));
+              return result;
+          }
+
+          }  // namespace base
+          }  // namespace android
+          #endif
+          EOF
+
+      # -----------------------------------------------------------------
+      # Now build libcutils, pointing to stubs + the repo’s own includes
+      # -----------------------------------------------------------------
+      - name: Build libcutils (core files only)
+        working-directory: libcutils
         run: |
           TARGET=aarch64-linux-android29
           CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-clang++
@@ -78,22 +99,49 @@ jobs:
           mkdir -p target/lib
 
           SOURCES=(
-            ashmem-dev.cpp config_utils.cpp fs.cpp fs_config.cpp
-            hashmap.cpp iosched_policy.cpp klog.cpp load_file.cpp
-            multiuser.cpp native_handle.cpp partition_utils.cpp properties.cpp
-            qtaguid.cpp record_stream.cpp sockets.cpp str_parms.cpp
-            strdup16to8.cpp strdup8to16.cpp threads.cpp trace-dev.cpp uevent.cpp
+            ashmem-dev.cpp
+            config_utils.cpp
+            fs.cpp
+            fs_config.cpp
+            hashmap.cpp
+            iosched_policy.cpp
+            klog.cpp
+            load_file.cpp
+            multiuser.cpp
+            native_handle.cpp
+            partition_utils.cpp
+            properties.cpp
+            qtaguid.cpp
+            record_stream.cpp
+            sockets.cpp
+            str_parms.cpp
+            strdup16to8.cpp
+            strdup8to16.cpp
+            threads.cpp
+            trace-dev.cpp
+            uevent.cpp
           )
 
           $CXX -shared -o target/lib/libcutils.so "${SOURCES[@]}" \
             -Iinclude \
-            -I../../liblog/liblog/include \
-            -I../../libbase/include \
+            -I. \
+            -I../stubs \            # finds stubs/log/log.h and stubs/android-base/strings.h
             -fPIC -O2 -Wno-unused-parameter -std=c++17 \
-            ../../liblog/liblog/liblog.a ../../libbase/libbase.a \
             -llog -landroid \
             -Wl,--allow-shlib-undefined
 
-          echo "✔ libcutils.so built"
+          echo "✔ libcutils.so built successfully"
 
-      # ... rest of packaging and upload unchanged
+      # Packaging & upload (unchanged)
+      - name: Package artifact
+        run: |
+          mkdir -p libcutils_out
+          cp libcutils/target/lib/libcutils.so libcutils_out/
+          tar -cJf libcutils-aarch64.tar.xz -C libcutils_out .
+          echo "artifact_name=libcutils-aarch64.tar.xz" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libcutils-aarch64
+          path: libcutils-aarch64.tar.xz
