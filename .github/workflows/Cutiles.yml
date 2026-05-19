@@ -7,27 +7,63 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. Install host tools
       - name: Install host tools
         run: |
           sudo apt update
           sudo apt install -y wget unzip
 
-      - name: Setup Android NDK (r27c)
+      # 2. Cache and verify NDK
+      - name: Cache Android NDK
+        id: cache-ndk
+        uses: actions/cache@v4
+        with:
+          path: /opt/android-ndk-r27c
+          key: ndk-r27c-linux-v2   # bump version if ever re-downloading
+
+      - name: Download NDK (if not cached)
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
         run: |
           NDK_VERSION="r27c"
           NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
           wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
+          # Optional: verify checksum (replace with real one from Google)
+          # echo "EXPECTED_SHA256  ${NDK_ZIP}" | sha256sum -c
           unzip -q ${NDK_ZIP} -d /opt
-          echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+          rm ${NDK_ZIP}
 
+      - name: Set NDK environment
+        run: echo "ANDROID_NDK_HOME=/opt/android-ndk-r27c" >> $GITHUB_ENV
+
+      # 3. Check out your libcutils repo (no submodules)
       - name: Checkout libcutils
         uses: actions/checkout@v4
         with:
           repository: D-os/libcutils
           path: libcutils
-          submodules: 'recursive'  
 
-      - name: Build libcutils (core sources + correct includes)
+      # 4. Fetch missing headers from liblog
+      - name: Fetch liblog headers
+        uses: actions/checkout@v4
+        with:
+          repository: aosp-mirror/platform_system_logging
+          path: liblog-headers
+          sparse-checkout: |
+            liblog/include
+          sparse-checkout-cone-mode: false
+
+      # 5. Fetch missing headers from libbase
+      - name: Fetch libbase headers
+        uses: actions/checkout@v4
+        with:
+          repository: aosp-mirror/platform_system_libbase
+          path: libbase-headers
+          sparse-checkout: |
+            libbase/include
+          sparse-checkout-cone-mode: false
+
+      # 6. Build libcutils
+      - name: Build libcutils (core sources + all includes)
         working-directory: libcutils
         run: |
           TARGET=aarch64-linux-android29
@@ -35,7 +71,7 @@ jobs:
 
           mkdir -p target/lib
 
-          # Platform-independent source files (no tests, no host/windows variants)
+          # Careful: no blank lines or trailing spaces inside the array!
           SOURCES=(
             ashmem-dev.cpp
             canned_fs_config.cpp
@@ -62,22 +98,30 @@ jobs:
             uevent.cpp
           )
 
-          $CXX -shared -o target/lib/libcutils.so "${SOURCES[@]}" \
+          # Filter out any accidentally empty elements
+          FILTERED=()
+          for src in "${SOURCES[@]}"; do
+            [[ -n "$src" ]] && FILTERED+=("$src")
+          done
+
+          $CXX -shared -o target/lib/libcutils.so "${FILTERED[@]}" \
             -Iinclude \
             -I. \
-            -Iinclude_vndk \      
+            -I../liblog-headers/liblog/include \
+            -I../libbase-headers/libbase/include \
             -fPIC -O2 -Wno-unused-parameter \
             -llog -landroid \
-            -Wl,--allow-shlib-undefined
+            -Wl,--allow-shlib-undefined   # try removing once everything resolves
 
           echo "✔ libcutils.so built successfully"
 
+      # 7. Package and upload
       - name: Package artifact
         run: |
           mkdir -p libcutils_out
           cp libcutils/target/lib/libcutils.so libcutils_out/
           tar -cJf libcutils-aarch64.tar.xz -C libcutils_out .
-          echo "artifact_name=libcutils-aarch64.tar.xz" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
