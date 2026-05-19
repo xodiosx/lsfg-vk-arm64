@@ -218,8 +218,9 @@ jobs:
             -Dvalgrind=disabled
 
       - name: Build Turnip
-        run: #ninja -C build
-             ls
+        run: 
+          ls
+          #ninja -C build
 
       # ----------------------------------------------------------------------
       # lsfg-vk layer build
@@ -262,40 +263,38 @@ jobs:
 
       - name: Build lsfg-vk
         working-directory: lsfg-vk
-        run: cmake --build build --parallel $(nproc)
+        run: 
+           # cmake --build build --parallel $(nproc)
+           ls
+
 
       - name: Install lsfg-vk
         working-directory: lsfg-vk
         run: cmake --install build
 
       # ----------------------------------------------------------------------
-      # libcutils build (D-os/libcutils)
+      # libcutils build (manual compilation – avoids CMake/GTEST issues)
       # ----------------------------------------------------------------------
       - name: Checkout libcutils repository
         uses: actions/checkout@v4
         with:
           repository: D-os/libcutils
           fetch-depth: 0
-          submodules: recursive
           path: libcutils
 
-      - name: Configure libcutils for Android
+      - name: Build libcutils manually
         working-directory: libcutils
         run: |
-          cmake -B build -G Ninja \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-26 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_INSTALL_PREFIX=./target
-
-      - name: Build libcutils
-        working-directory: libcutils
-        run: cmake --build build --parallel $(nproc)
-
-      - name: Install libcutils
-        working-directory: libcutils
-        run: cmake --install build
+          TARGET=aarch64-linux-android29
+          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-clang++
+          mkdir -p target/lib
+          # Compile all .cpp files into a shared library
+          $CXX -shared -o target/lib/libcutils.so *.cpp \
+            -Wl,--allow-shlib-undefined \
+            -llog -landroid \
+            -I. \
+            -fPIC -O2 -Wno-unused-parameter
+          echo "✔ libcutils.so built"
 
       # ----------------------------------------------------------------------
       # Packaging & upload for all three
@@ -314,19 +313,15 @@ jobs:
       - name: Package lsfg-vk artifact
         run: |
           mkdir -p lsfg_out
-          # Grab all installed files from lsfg-vk/target (library, layer manifest, etc.)
-          
           cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
-          cp .target/* lsfg_out/ 2>/dev/null || \
-          cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/target lsfg_out/
-         
+          cp lsfg-vk/build/liblsfg-vk-layer.so lsfg_out/ 2>/dev/null || \
+          find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \;
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
           echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Package libcutils artifact
         run: |
           mkdir -p libcutils_out
-          # Copy library and any other useful files
           cp -a libcutils/target/lib/*.so libcutils_out/ 2>/dev/null || \
           find libcutils -name "*.so" -exec cp {} libcutils_out/ \;
           tar -cJf libcutils-aarch64.tar.xz -C libcutils_out .
