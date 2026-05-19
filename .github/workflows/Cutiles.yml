@@ -1,0 +1,83 @@
+name: Build libcutils only
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install host tools
+        run: |
+          sudo apt update
+          sudo apt install -y wget unzip
+
+      - name: Setup Android NDK (r27c)
+        run: |
+          NDK_VERSION="r27c"
+          NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
+          unzip -q ${NDK_ZIP} -d /opt
+          echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+
+      - name: Checkout libcutils
+        uses: actions/checkout@v4
+        with:
+          repository: D-os/libcutils
+          path: libcutils
+
+      - name: Build libcutils (core files only)
+        working-directory: libcutils
+        run: |
+          TARGET=aarch64-linux-android29
+          CXX=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/${TARGET}-clang++
+
+          mkdir -p target/lib
+
+          # Only the platform-independent source files – no tests, no host/windows variants
+          SOURCES=(
+            ashmem-dev.cpp
+            config_utils.cpp
+            fs.cpp
+            fs_config.cpp
+            hashmap.cpp
+            iosched_policy.cpp
+            klog.cpp
+            load_file.cpp
+            multiuser.cpp
+            native_handle.cpp
+            partition_utils.cpp
+            properties.cpp
+            qtaguid.cpp
+            record_stream.cpp
+            sockets.cpp
+            str_parms.cpp
+            strdup16to8.cpp
+            strdup8to16.cpp
+            threads.cpp
+            trace-dev.cpp
+            uevent.cpp
+          )
+
+          # Compile into shared library
+          $CXX -shared -o target/lib/libcutils.so "${SOURCES[@]}" \
+            -Iinclude \
+            -I. \
+            -fPIC -O2 -Wno-unused-parameter \
+            -llog -landroid \
+            -Wl,--allow-shlib-undefined
+
+          echo "✔ libcutils.so built successfully"
+
+      - name: Package artifact
+        run: |
+          mkdir -p libcutils_out
+          cp libcutils/target/lib/libcutils.so libcutils_out/
+          tar -cJf libcutils-aarch64.tar.xz -C libcutils_out .
+          echo "artifact_name=libcutils-aarch64.tar.xz" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libcutils-aarch64
+          path: libcutils-aarch64.tar.xz
