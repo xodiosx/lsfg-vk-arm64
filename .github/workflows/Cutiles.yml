@@ -1,4 +1,4 @@
-name: Build libcutils (standalone, with auto‑generated stubs)
+name: Build libcutils (ARM64)
 
 on:
   workflow_dispatch:
@@ -20,75 +20,13 @@ jobs:
           unzip -q ${NDK_ZIP} -d /opt
           echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
 
-      # Your standalone libcutils repo – it has include/cutils and include/private
       - name: Checkout libcutils
         uses: actions/checkout@v4
         with:
           repository: D-os/libcutils
           path: libcutils
 
-      # -----------------------------------------------------------------
-      # Generate missing headers that libcutils expects but aren’t in the repo
-      # -----------------------------------------------------------------
-      - name: Create stubs for external AOSP headers
-        run: |
-          mkdir -p stubs/log stubs/android-base
-
-          # --- stub for log/log.h ---
-          cat > stubs/log/log.h << 'EOF'
-          #ifndef _STUB_LOG_H
-          #define _STUB_LOG_H
-          #include <android/log.h>
-          #include <stdarg.h>
-          #include <stdint.h>
-
-          /* A few extra macros/types that libcutils uses */
-          #define LOG_EVENT_INT(_data)  0
-          #define LOG_EVENT_LONG(_data) 0
-          #define LOG_EVENT_STRING(_data) 0
-
-          typedef struct android_log_event_list {
-              int dummy;
-          } android_log_event_list;
-
-          /* Functions normally provided by liblog.so (already present on Android) */
-          extern int __android_log_buf_write(int bufID, int prio, const char *tag, const char *text);
-          extern int __android_log_buf_print(int bufID, int prio, const char *tag, const char *fmt, ...);
-          #endif
-          EOF
-
-          # --- stub for android-base/strings.h ---
-          cat > stubs/android-base/strings.h << 'EOF'
-          #ifndef _STUB_ANDROID_BASE_STRINGS_H
-          #define _STUB_ANDROID_BASE_STRINGS_H
-          #include <string>
-          #include <vector>
-
-          namespace android {
-          namespace base {
-
-          // Minimal Split function – libcutils only needs a simple string splitter
-          static inline std::vector<std::string> Split(const std::string& s,
-                                                       const std::string& delimiters) {
-              std::vector<std::string> result;
-              std::size_t start = 0, end;
-              while ((end = s.find_first_of(delimiters, start)) != std::string::npos) {
-                  if (end > start) result.push_back(s.substr(start, end - start));
-                  start = end + 1;
-              }
-              if (start < s.size()) result.push_back(s.substr(start));
-              return result;
-          }
-
-          }  // namespace base
-          }  // namespace android
-          #endif
-          EOF
-
-      # -----------------------------------------------------------------
-      # Now build libcutils, pointing to stubs + the repo’s own includes
-      # -----------------------------------------------------------------
-      - name: Build libcutils (core files only)
+      - name: Build libcutils (core sources + correct includes)
         working-directory: libcutils
         run: |
           TARGET=aarch64-linux-android29
@@ -96,8 +34,10 @@ jobs:
 
           mkdir -p target/lib
 
+          # Platform-independent source files (no tests, no host/windows variants)
           SOURCES=(
             ashmem-dev.cpp
+            canned_fs_config.cpp
             config_utils.cpp
             fs.cpp
             fs_config.cpp
@@ -117,20 +57,19 @@ jobs:
             strdup8to16.cpp
             threads.cpp
             trace-dev.cpp
+            trace-container.cpp
             uevent.cpp
           )
 
           $CXX -shared -o target/lib/libcutils.so "${SOURCES[@]}" \
             -Iinclude \
             -I. \
-            -I../stubs \            # finds stubs/log/log.h and stubs/android-base/strings.h
-            -fPIC -O2 -Wno-unused-parameter -std=c++17 \
+            -fPIC -O2 -Wno-unused-parameter \
             -llog -landroid \
             -Wl,--allow-shlib-undefined
 
           echo "✔ libcutils.so built successfully"
 
-      # Packaging & upload (unchanged)
       - name: Package artifact
         run: |
           mkdir -p libcutils_out
