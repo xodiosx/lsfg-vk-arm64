@@ -289,7 +289,7 @@ jobs:
           mkdir -p lsfg_out
           cp lsfg-vk/target/. lsfg_out/ 2>/dev/null || true
           cp .target/. lsfg_out/ 2>/dev/null || true
-          find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \; || true
+          #find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \; || true
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
           echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
 
