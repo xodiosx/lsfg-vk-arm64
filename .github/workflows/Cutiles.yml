@@ -25,6 +25,7 @@ jobs:
         with:
           repository: D-os/libcutils
           path: libcutils
+          submodules: 'recursive'  
 
       - name: Build libcutils (core sources + correct includes)
         working-directory: libcutils
@@ -64,6 +65,7 @@ jobs:
           $CXX -shared -o target/lib/libcutils.so "${SOURCES[@]}" \
             -Iinclude \
             -I. \
+            -Iinclude_vndk \      
             -fPIC -O2 -Wno-unused-parameter \
             -llog -landroid \
             -Wl,--allow-shlib-undefined
