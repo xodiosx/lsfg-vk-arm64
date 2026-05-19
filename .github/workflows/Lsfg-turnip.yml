@@ -1,4 +1,4 @@
-name: Build Turnip + lsfg-vk (X11 + SurfaceFlinger)
+name: Build Turnip + lsfg-vk + libcutils (SurfaceFlinger)
 
 on:
   workflow_dispatch:
@@ -84,7 +84,7 @@ jobs:
           sudo chmod +x /usr/local/bin/termux-pkg-config
 
       # ----------------------------------------------------------------------
-      # Turnip build (same as before)
+      # Turnip build
       # ----------------------------------------------------------------------
       - name: Clone Mesa
         run: |
@@ -193,7 +193,7 @@ jobs:
           pkg-config = 'termux-pkg-config'
           EOF
 
-      - name: Configure Mesa (X11 + Android)
+      - name: Configure Mesa (Android only, SurfaceFlinger)
         run: |
           meson setup build ~/mesa \
             --cross-file ~/cross_file.txt \
@@ -236,8 +236,6 @@ jobs:
         run: |
           find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.in" -o -name "*.spec" \) \
             -exec grep -l "/tmp" {} \; 2>/dev/null | xargs sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g' 2>/dev/null || true
-          # Optional: replace image.cpp if needed
-          # curl -L https://raw.githubusercontent.com/mebabo1/menano/refs/heads/main/path/image.cpp -o framegen/src/core/image.cpp
 
       - name: Configure lsfg-vk for Termux Bionic
         working-directory: lsfg-vk
@@ -270,7 +268,36 @@ jobs:
         run: cmake --install build
 
       # ----------------------------------------------------------------------
-      # Packaging & upload
+      # libcutils build (D-os/libcutils)
+      # ----------------------------------------------------------------------
+      - name: Checkout libcutils repository
+        uses: actions/checkout@v4
+        with:
+          repository: D-os/libcutils
+          fetch-depth: 0
+          submodules: recursive
+          path: libcutils
+
+      - name: Configure libcutils for Android
+        working-directory: libcutils
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-26 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=./target
+
+      - name: Build libcutils
+        working-directory: libcutils
+        run: cmake --build build --parallel $(nproc)
+
+      - name: Install libcutils
+        working-directory: libcutils
+        run: cmake --install build
+
+      # ----------------------------------------------------------------------
+      # Packaging & upload for all three
       # ----------------------------------------------------------------------
       - name: Package Turnip artifact
         run: |
@@ -284,15 +311,25 @@ jobs:
           echo "turnip_artifact=turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Package lsfg-vk artifact
-        
         run: |
           mkdir -p lsfg_out
+          # Grab all installed files from lsfg-vk/target (library, layer manifest, etc.)
+          
           cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
           cp .target/* lsfg_out/ 2>/dev/null || \
           cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/target lsfg_out/
-          #find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \; || true
+         
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
           echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
+
+      - name: Package libcutils artifact
+        run: |
+          mkdir -p libcutils_out
+          # Copy library and any other useful files
+          cp -a libcutils/target/lib/*.so libcutils_out/ 2>/dev/null || \
+          find libcutils -name "*.so" -exec cp {} libcutils_out/ \;
+          tar -cJf libcutils-aarch64.tar.xz -C libcutils_out .
+          echo "libcutils_artifact=libcutils-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Upload Turnip artifact
         uses: actions/upload-artifact@v4
@@ -305,3 +342,9 @@ jobs:
         with:
           name: lsfg-vk-aarch64
           path: lsfg-vk-*.tar.xz
+
+      - name: Upload libcutils artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libcutils-aarch64
+          path: libcutils-*.tar.xz
