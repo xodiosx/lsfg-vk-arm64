@@ -1,5 +1,3 @@
-name: Build libcutils (with dependencies)
-
 name: Build libcutils (standalone, with auto‑generated stubs)
 
 on:
