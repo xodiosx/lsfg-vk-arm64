@@ -284,7 +284,7 @@ jobs:
           echo "turnip_artifact=turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Package lsfg-vk artifact
-        working-directory: lsfg-vk
+        
         run: |
           mkdir -p lsfg_out
           cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
