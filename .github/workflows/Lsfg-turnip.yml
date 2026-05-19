@@ -270,7 +270,9 @@ jobs:
 
       - name: Install lsfg-vk
         working-directory: lsfg-vk
-        run: cmake --install build
+        run:
+           ls
+           #cmake --install build
 
       # ----------------------------------------------------------------------
       # libcutils build (manual compilation – avoids CMake/GTEST issues)
