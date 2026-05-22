@@ -5,7 +5,7 @@
 const std::string DEFAULT_CONFIG = R"(version = 1
 [global]
 # override the location of Lossless Scaling
-# dll = "/games/Lossless Scaling/Lossless.dll"
+# dll = "/data/data/com.xodos/files/usr/share/lsfg-vk/Lossless.dll"
 
 # [[game]] # example entry
 # exe = "Game.exe"
@@ -33,4 +33,24 @@ performance_mode = false
 exe = "Genshin"
 
 multiplier = 3
+
+[[game]] # default benchmark entry
+exe = "vkmark"
+
+multiplier = 3
+performance_mode = true
+
+[[game]] # default benchmark entry
+exe = "glmark2"
+
+multiplier = 3
+performance_mode = true
+
+[[game]] # default benchmark entry
+exe = "TestD3D"
+
+multiplier = 4
+performance_mode = true
+
+
 )";
