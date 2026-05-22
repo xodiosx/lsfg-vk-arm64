@@ -284,10 +284,10 @@ jobs:
       - name: Package Turnip artifact
         run: |
           mkdir -p turnip_out
-          if [ -f build/src/freedreno/vulkan/libvulkan_freedreno_surfaceflinger.so ]; then
-            cp build/src/freedreno/vulkan/libvulkan_freedreno_surfaceflinger.so turnip_out/
+          if [ -f build/src/freedreno/vulkan/libvulkan_freedreno_android.so ]; then
+            cp build/src/freedreno/vulkan/libvulkan_freedreno_android.so turnip_out/
           else
-            cp build/src/freedreno/vulkan/libvulkan_freedreno.so turnip_out/
+            cp build/src/freedreno/vulkan/libvulkan_freedreno* turnip_out/
           fi
           tar -cJf turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz -C turnip_out .
 
@@ -295,6 +295,8 @@ jobs:
         run: |
           mkdir -p lsfg_out
           cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || true
+          cp .target/* lsfg_out/ 2>/dev/null || \
+          cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/target/* lsfg_out/
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
 
       - name: Upload release assets
