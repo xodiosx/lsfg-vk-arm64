@@ -5,7 +5,7 @@
 const std::string DEFAULT_CONFIG = R"(version = 1
 [global]
 # override the location of Lossless Scaling
-# dll = "/data/data/com.xodos/files/usr/share/lsfg-vk/Lossless.dll"
+ dll ="/data/data/com.xodos/files/usr/share/lsfg-vk/Lossless.dll"
 
 # [[game]] # example entry
 # exe = "Game.exe"
