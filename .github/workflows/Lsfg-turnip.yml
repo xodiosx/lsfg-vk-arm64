@@ -3,6 +3,11 @@ name: Build Turnip + lsfg-vk (X11 + SurfaceFlinger)
 on:
   workflow_dispatch:
     inputs:
+      tag:
+        description: 'Release tag to create or update, e.g. v1.0.0'
+        required: true
+        default: '26.2.0'
+        type: string
       mesa_version:
         description: 'Mesa version (e.g., mesa-26.0.6)'
         required: true
@@ -12,12 +17,16 @@ on:
         required: false
         default: '1.4.301'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [aarch64]
+
     steps:
       - name: Install host build tools (pip meson 1.4.0)
         run: |
@@ -103,11 +112,11 @@ jobs:
             curl -sSfL "https://raw.githubusercontent.com/termux/termux-packages/master/packages/mesa/$patchfile" | patch -N -p1
           }
 
-          apply_termux_patch "0006-wsi-no-pthread_cancel.patch"
+          #apply_termux_patch "0006-wsi-no-pthread_cancel.patch"
           apply_termux_patch "0015-define-reallocarray.patch"
-          apply_termux_patch "0014-replace-turnip-wait_timestamp_safe-assert.patch"
-          apply_termux_patch "0016-unofficial_support_adreno_710_720.patch"
-          apply_termux_patch "0018-disable-general-layout-in-zink-for-turnip.patch"
+          #apply_termux_patch "0014-replace-turnip-wait_timestamp_safe-assert.patch"
+          #apply_termux_patch "0016-unofficial_support_adreno_710_720.patch"
+          #apply_termux_patch "0018-disable-general-layout-in-zink-for-turnip.patch"
 
           sed -i 's/pthread_mutex_lock(&dev->pipeline_mutex)/mtx_lock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
           sed -i 's/pthread_mutex_unlock(&dev->pipeline_mutex)/mtx_unlock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
@@ -161,9 +170,9 @@ jobs:
       - name: Rename output library (optional)
         run: |
           cd ~/mesa
-          sed -i "s/'vulkan_freedreno'/'vulkan_freedreno_surfaceflinger'/g" src/freedreno/vulkan/meson.build
+          sed -i "s/'vulkan_freedreno'/'vulkan_freedreno_android'/g" src/freedreno/vulkan/meson.build
           sed -i "/freedreno_icd = custom_target/,/)/{ s/install : true/install : false/ }" src/freedreno/vulkan/meson.build
-          echo "✔ Library renamed to libvulkan_freedreno_surfaceflinger.so"
+          echo "✔ Library renamed to libvulkan_freedreno_android.so"
 
       - name: Create Meson cross file for ${{ matrix.arch }}
         run: |
@@ -226,7 +235,7 @@ jobs:
       - name: Checkout lsfg-vk repository
         uses: actions/checkout@v4
         with:
-          repository: xXJSONDeruloXx/lsfg-vk-android
+          repository: xodiosx/lsfg-vk-android
           fetch-depth: 0
           submodules: recursive
           path: lsfg-vk
@@ -237,7 +246,7 @@ jobs:
           find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.in" -o -name "*.spec" \) \
             -exec grep -l "/tmp" {} \; 2>/dev/null | xargs sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g' 2>/dev/null || true
           # Optional: replace image.cpp if needed
-          # curl -L https://raw.githubusercontent.com/mebabo1/menano/refs/heads/main/path/image.cpp -o framegen/src/core/image.cpp
+          #curl -L https://raw.githubusercontent.com/mebabo1/menano/refs/heads/main/path/image.cpp -o framegen/src/core/image.cpp
 
       - name: Configure lsfg-vk for Termux Bionic
         working-directory: lsfg-vk
@@ -281,27 +290,20 @@ jobs:
             cp build/src/freedreno/vulkan/libvulkan_freedreno.so turnip_out/
           fi
           tar -cJf turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz -C turnip_out .
-          echo "turnip_artifact=turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz" >> $GITHUB_ENV
 
       - name: Package lsfg-vk artifact
-        
         run: |
           mkdir -p lsfg_out
-          cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || \
-          cp .target/* lsfg_out/ 2>/dev/null || \
-          cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/target lsfg_out/
-          #find lsfg-vk -name "*.so" -exec cp {} lsfg_out/ \; || true
+          cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || true
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
-          echo "lsfg_artifact=lsfg-vk-aarch64.tar.xz" >> $GITHUB_ENV
 
-      - name: Upload Turnip artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
         with:
-          name: turnip-${{ github.event.inputs.mesa_version }}-aarch64
-          path: turnip-*.tar.xz
-
-      - name: Upload lsfg-vk artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lsfg-vk-aarch64
-          path: lsfg-vk-*.tar.xz
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          files: |
+            turnip-*.tar.xz
+            lsfg-vk-*.tar.xz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
