@@ -50,9 +50,7 @@ file(GLOB SOURCES
 )
 
 add_library(lsfg-vk SHARED ${SOURCES})
-set_target_properties(lsfg-vk PROPERTIES
-    OUTPUT_NAME "lsfg-vk-layer"
-)
+
 
 # target
 set_target_properties(lsfg-vk PROPERTIES
@@ -98,7 +96,8 @@ if(LSFGVK_EXCESS_DEBUG)
 endif()
 
 # install
-install(FILES "${CMAKE_BINARY_DIR}/liblsfg-vk-layer.so"
+install(FILES "${CMAKE_BINARY_DIR}/liblsfg-vk-
+.so"
     DESTINATION lib)
 install(FILES "${CMAKE_SOURCE_DIR}/VkLayer_LS_frame_generation.json"
     DESTINATION etc/vulkan/implicit_layer.d)
