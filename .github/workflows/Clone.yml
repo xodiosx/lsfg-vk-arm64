@@ -2,10 +2,10 @@ name: Sync lsfg-vk Repo
 
 on:
   workflow_dispatch:
-  
+
 permissions:
   contents: write
-  
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -14,42 +14,55 @@ jobs:
       - name: Checkout current repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Clone Mesa repo
+      - name: Set branch names
+        shell: bash
         run: |
-          git clone --depth=1 --branch release --recurse-submodules --shallow-submodules \
+          echo "SOURCE_REF=v1.0.0-android" >> "$GITHUB_ENV"
+          echo "TARGET_BRANCH=v1.0.0-android-sync" >> "$GITHUB_ENV"
+
+      - name: Create isolated new branch
+        shell: bash
+        run: |
+          git checkout --orphan "$TARGET_BRANCH"
+          git rm -rf . || true
+
+      - name: Clone source repo shallow with submodules
+        shell: bash
+        run: |
+          git clone --branch "$SOURCE_REF" --depth 1 --recurse-submodules --shallow-submodules \
             https://github.com/xXJSONDeruloXx/lsfg-vk-android.git lsfg
+
           cd lsfg
           git submodule update --init --recursive --depth=1
 
-      - name: Replace repo contents
+      - name: Strip Git metadata from source
         shell: bash
         run: |
-          echo "🧹 Cleaning current repo..."
-          rm -rf lsfg/.git  || true
-          tar -jcpf workflow.tar.xz lsfg/.github
-          rm -rf lsfg/.github
-          rm -rf lsfg/thirdparty/
-          rm -rf lsfg/include/config/default_conf.hpp
-          rm -rf lsfg/VkLayer_LS_frame_generation.json
+          rm -rf lsfg/.git
+          rm -f lsfg/.github
+          #rm -f lsfg/.gitmodules || true
+          find lsfg -type d -name .git -prune -exec rm -rf {} +
+          find lsfg -type f -name .git -delete
 
-          echo "📦 Copying Mesa files..."
-          ls lsfg
+      - name: Copy source into new branch
+        shell: bash
+        run: |
+          shopt -s dotglob nullglob
+          #rm -rf 
           cp -a lsfg/. .
-           
-
-          echo "🗑️ Removing temp folder..."
           rm -rf lsfg
 
       - name: Commit changes
+        shell: bash
         run: |
-          #cd lsfg
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add .
-          git commit -m "🔄 Sync Mesa repo" || echo "No changes to commit"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Sync lsfg-vk into $TARGET_BRANCH" || echo "No changes to commit"
 
-      - name: Force push (overwrite repo)
+      - name: Push only the new branch
+        shell: bash
         run: |
-          git push origin release --force
+          git push origin +HEAD:refs/heads/"$TARGET_BRANCH"
