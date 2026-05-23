@@ -30,6 +30,7 @@ jobs:
           rm -rf lsfg/.git  || true
           tar -jcpf workflow.tar.xz lsfg/.github
           rm -rf lsfg/.github
+          rm -rf lsfg/thirdparty/
           rm -rf lsfg/include/config/default_conf.hpp
           rm -rf lsfg/VkLayer_LS_frame_generation.json
 
