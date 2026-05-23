@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [arm64-v8a, x86_64]
+        abi: [arm64-v8a]
 
     steps:
       - name: Checkout repository
@@ -67,18 +67,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: List release assets
-        run: ls -lh release-assets/
+      
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*.so
+          files: build-${{ matrix.abi }}/*.so
           generate_release_notes: true
           tag_name: ${{ github.ref_name }}
