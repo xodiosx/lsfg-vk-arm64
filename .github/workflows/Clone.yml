@@ -1,0 +1,54 @@
+name: Sync lsfg-vk Repo
+
+on:
+  workflow_dispatch:
+  
+permissions:
+  contents: write
+  
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clone Mesa repo
+        run: |
+          git clone --depth=1 --branch release --recurse-submodules --shallow-submodules \
+            https://github.com/xXJSONDeruloXx/lsfg-vk-android.git lsfg
+          cd lsfg
+          git submodule update --init --recursive --depth=1
+
+      - name: Replace repo contents
+        shell: bash
+        run: |
+          echo "🧹 Cleaning current repo..."
+          rm -rf lsfg/.git  || true
+          tar -jcpf workflow.tar.xz lsfg/.github
+          rm -rf lsfg/.github
+          rm -rf lsfg/include/config/default_conf.hpp
+          rm -rf lsfg/VkLayer_LS_frame_generation.json
+
+          echo "📦 Copying Mesa files..."
+          ls lsfg
+          cp -a lsfg/. .
+           
+
+          echo "🗑️ Removing temp folder..."
+          rm -rf lsfg
+
+      - name: Commit changes
+        run: |
+          #cd lsfg
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add .
+          git commit -m "🔄 Sync Mesa repo" || echo "No changes to commit"
+
+      - name: Force push (overwrite repo)
+        run: |
+          git push origin main --force
