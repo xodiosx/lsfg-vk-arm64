@@ -232,11 +232,9 @@ jobs:
       # ----------------------------------------------------------------------
       # lsfg-vk layer build
       # ----------------------------------------------------------------------
-      - name: Checkout lsfg-vk repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: xXJSONDeruloXx/lsfg-vk-android
-          fetch-depth: 0
           submodules: recursive
           path: lsfg-vk
 
@@ -246,38 +244,32 @@ jobs:
           find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.in" -o -name "*.spec" \) \
             -exec grep -l "/tmp" {} \; 2>/dev/null | xargs sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g' 2>/dev/null || true
           # Optional: replace image.cpp if needed
-          curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/CMakeLists.txt -o CMakeLists.txt          
-          curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/include/config/default_conf.hpp -o include/config/default_conf.hpp
+          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/CMakeLists.txt -o CMakeLists.txt          
+          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/include/config/default_conf.hpp -o include/config/default_conf.hpp
 
-      - name: Configure lsfg-vk for Termux Bionic
+      - name: Configure lsfg-vk for Termux Bionic     
         working-directory: lsfg-vk
         run: |
-          cmake -B build -G Ninja \
-          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-          -DANDROID_ABI=arm64-v8a \
-          -DANDROID_PLATFORM=android-26 \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DCMAKE_CXX_STANDARD=20 \
-          -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-          -DCMAKE_INSTALL_PREFIX=./target \
-          -DLSFGVK_BUILD_VK_LAYER=ON \
-          -DLSFGVK_BUILD_UI=OFF \
-          -DLSFGVK_BUILD_CLI=OFF \
-          -DLSFGVK_INSTALL_XDG_FILES=OFF \
-          -DLSFGVK_LAYER_LIBRARY_PATH="/data/data/com.termux/files/usr/lib/liblsfg-vk-layer.so" \
-          -DVOLK_STATIC_DEFINES=VK_USE_PLATFORM_ANDROID_KHR \
-          "-DCMAKE_CXX_FLAGS=-DVK_USE_PLATFORM_ANDROID_KHR" \
-          "-DCMAKE_C_FLAGS=-DVK_USE_PLATFORM_ANDROID_KHR" \
-          -DCMAKE_SHARED_LINKER_FLAGS="-llog -Wl,--allow-shlib-undefined -Wl,-rpath,/data/data/com.termux/files/usr/lib" \
-          -DCMAKE_EXE_LINKER_FLAGS="-llog -Wl,--allow-shlib-undefined -Wl,-rpath,/data/data/com.termux/files/usr/lib"
+          cmake -B build-arm64-v8a \
+            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28 \
+            -DLSFGVK_ANDROID_WINE=ON \
+            -DVOLK_STATIC_DEFINES=VK_USE_PLATFORM_ANDROID_KHR \
+            "-DCMAKE_CXX_FLAGS=-DVK_USE_PLATFORM_ANDROID_KHR" \
+            "-DCMAKE_C_FLAGS=-DVK_USE_PLATFORM_ANDROID_KHR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
 
       - name: Build lsfg-vk
         working-directory: lsfg-vk
-        run: cmake --build build --parallel $(nproc)
+        run: ninja -C build-arm64-v8a
+           ${NDK_BIN}/llvm-stripp \
+            --strip-unneeded \
+            -o build-arm64-v8a/liblsfg-vk-layer.so \
+            build-arm64-v8a/liblsfg-vk.so
 
-      - name: Install lsfg-vk
-        working-directory: lsfg-vk
-        run: cmake --install build
+      
 
       # ----------------------------------------------------------------------
       # Packaging & upload
@@ -293,11 +285,17 @@ jobs:
           tar -cJf turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz -C turnip_out .
 
       - name: Package lsfg-vk artifact
+        working-directory: lsfg-vk
         run: |
           mkdir -p lsfg_out
-          cp -a lsfg-vk/target/* lsfg_out/ 2>/dev/null || true
-          cp .target/* lsfg_out/ 2>/dev/null || \
-          cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/target/* lsfg_out/
+          mkdir -p build-arm64-v8a/lib
+          mkdir -p build-arm64-v8a/etc/vulkan/implicit_layer.d/
+          cp -a build-arm64-v8a/liblsfg-vk-layer.so build-arm64-v8a/lib/
+          cp -a VkLayer_LS_frame_generation.json build-arm64-v8a/etc/vulkan/implicit_layer.d/
+          cp -a build-arm64-v8a/lib lsfg_out/ 
+          cp -a build-arm64-v8a/etc lsfg_out/ 
+          #cp -a build-arm64-v8a/* lsfg_out/ 2>/dev/null || \
+          #cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/build-arm64-v8a/* lsfg_out/
           tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
 
       - name: Upload release assets
