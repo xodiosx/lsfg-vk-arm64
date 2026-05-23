@@ -250,6 +250,7 @@ jobs:
       - name: Configure lsfg-vk for Termux Bionic     
         working-directory: lsfg-vk
         run: |
+          
           cmake -B build-arm64-v8a \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
@@ -263,8 +264,11 @@ jobs:
 
       - name: Build lsfg-vk
         working-directory: lsfg-vk
-        run: ninja -C build-arm64-v8a
-           ${NDK_BIN}/llvm-stripp \
+        run:
+          API=29
+          NDK_BIN="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ninja -C build-arm64-v8a
+           $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip \
             --strip-unneeded \
             -o build-arm64-v8a/liblsfg-vk-layer.so \
             build-arm64-v8a/liblsfg-vk.so
