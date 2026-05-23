@@ -117,9 +117,9 @@ jobs:
           #apply_termux_patch "0014-replace-turnip-wait_timestamp_safe-assert.patch"
           #apply_termux_patch "0016-unofficial_support_adreno_710_720.patch"
           #apply_termux_patch "0018-disable-general-layout-in-zink-for-turnip.patch"
-
-          sed -i 's/pthread_mutex_lock(&dev->pipeline_mutex)/mtx_lock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
-          sed -i 's/pthread_mutex_unlock(&dev->pipeline_mutex)/mtx_unlock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
+          #if building for x11 patch pthread
+          #sed -i 's/pthread_mutex_lock(&dev->pipeline_mutex)/mtx_lock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
+          #sed -i 's/pthread_mutex_unlock(&dev->pipeline_mutex)/mtx_unlock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
           echo "✔ All patches applied"
 
       - name: Inject mock libudev header
@@ -170,9 +170,9 @@ jobs:
       - name: Rename output library (optional)
         run: |
           cd ~/mesa
-          sed -i "s/'vulkan_freedreno'/'vulkan_freedreno_android'/g" src/freedreno/vulkan/meson.build
+          sed -i "s/'vulkan_freedreno'/'vulkan_freedreno'/g" src/freedreno/vulkan/meson.build
           sed -i "/freedreno_icd = custom_target/,/)/{ s/install : true/install : false/ }" src/freedreno/vulkan/meson.build
-          echo "✔ Library renamed to libvulkan_freedreno_android.so"
+          echo "✔ Library renamed to libvulkan_freedreno.so"
 
       - name: Create Meson cross file for ${{ matrix.arch }}
         run: |
@@ -284,8 +284,8 @@ jobs:
       - name: Package Turnip artifact
         run: |
           mkdir -p turnip_out
-          if [ -f build/src/freedreno/vulkan/libvulkan_freedreno_android.so ]; then
-            cp build/src/freedreno/vulkan/libvulkan_freedreno_android.so turnip_out/
+          if [ -f build/src/freedreno/vulkan/libvulkan_freedreno.so ]; then
+            cp build/src/freedreno/vulkan/libvulkan_freedreno.so turnip_out/
           else
             cp build/src/freedreno/vulkan/libvulkan_freedreno* turnip_out/
           fi
