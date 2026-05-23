@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: liblsfg-vk-${{ matrix.abi }}
-          path: build-${{ matrix.abi }}/liblsfg-vk-${{ matrix.abi }}.so
+          path: build-arm64-v8a/*.so
 
   release:
     needs: build
@@ -72,6 +72,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build-${{ matrix.abi }}/*.so
+          files: build-arm64-v8a/*.so
           generate_release_notes: true
           tag_name: ${{ github.ref_name }}
