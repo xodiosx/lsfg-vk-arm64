@@ -299,7 +299,7 @@ jobs:
           cp -a build-arm64-v8a/etc lsfg_out/ 
           #cp -a build-arm64-v8a/* lsfg_out/ 2>/dev/null || \
           #cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/build-arm64-v8a/* lsfg_out/
-          tar -cJf lsfg-vk-aarch64.tar.xz -C lsfg_out .
+          tar -cJf ../lsfg-vk-aarch64.tar.xz -C lsfg_out .
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
