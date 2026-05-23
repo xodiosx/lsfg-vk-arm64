@@ -1,4 +1,4 @@
-name: Build Android .so
+name: Build Ando
 
 on:
   push:
@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [arm64-v8a]
+        abi: [arm64-v8a, x86_64]
 
     steps:
       - name: Checkout repository
@@ -48,14 +48,14 @@ jobs:
         run: |
           $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip \
             --strip-unneeded \
-            -o build-${{ matrix.abi }}/liblsfg-vk-layer.so \
+            -o build-${{ matrix.abi }}/liblsfg-vk-${{ matrix.abi }}.so \
             build-${{ matrix.abi }}/liblsfg-vk.so
 
       - name: Upload artifact (${{ matrix.abi }})
         uses: actions/upload-artifact@v4
         with:
           name: liblsfg-vk-${{ matrix.abi }}
-          path: build-arm64-v8a/*.so
+          path: build-${{ matrix.abi }}/liblsfg-vk-${{ matrix.abi }}.so
 
   release:
     needs: build
@@ -67,11 +67,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -lh release-assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build-arm64-v8a/*.so
+          files: release-assets/*.so
           generate_release_notes: true
           tag_name: ${{ github.ref_name }}
