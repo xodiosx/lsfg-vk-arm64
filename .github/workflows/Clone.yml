@@ -52,4 +52,4 @@ jobs:
 
       - name: Force push (overwrite repo)
         run: |
-          git push origin main --force
+          git push origin release --force
