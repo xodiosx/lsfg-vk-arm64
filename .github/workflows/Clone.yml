@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           rm -rf lsfg/.git
-          rm -f lsfg/.github
+          rm -rf lsfg/.github
           #rm -f lsfg/.gitmodules || true
           find lsfg -type d -name .git -prune -exec rm -rf {} +
           find lsfg -type f -name .git -delete
