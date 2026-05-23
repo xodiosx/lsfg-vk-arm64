@@ -18,17 +18,6 @@ add_compile_options(-fPIC
     -Wno-deprecated-declarations
     -Wno-unused-template)
 
-# Tell volk (and all targets) to expose Android Vulkan extensions.
-# The NDK toolchain sets CMAKE_SYSTEM_NAME=Android but that variable is not
-# yet visible during the initial toolchain/cache pass, so we gate on the
-# user-facing LSFGVK_ANDROID_WINE option which is always explicitly set when
-# targeting Android.  The CACHE FORCE ensures volk's own CMakeLists doesn't
-# reset the variable to empty before we add_subdirectory it.
-if(LSFGVK_ANDROID_WINE)
-    set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_ANDROID_KHR CACHE STRING "" FORCE)
-    add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
-endif()
-
 add_subdirectory(thirdparty/dxbc EXCLUDE_FROM_ALL)
 add_subdirectory(thirdparty/pe-parse/pe-parser-library EXCLUDE_FROM_ALL)
 add_subdirectory(thirdparty/toml11 EXCLUDE_FROM_ALL)
@@ -60,6 +49,11 @@ target_include_directories(lsfg-vk
 target_link_libraries(lsfg-vk PRIVATE
     pe-parse dxbc toml11
     lsfg-vk-framegen)
+
+if(ANDROID)
+    target_link_libraries(lsfg-vk PRIVATE android)
+    target_include_directories(lsfg-vk PRIVATE "${ANDROID_NDK}/sources/android/native_app_glue")
+endif()
 
 get_target_property(TOML11_INCLUDE_DIRS toml11 INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(lsfg-vk SYSTEM PRIVATE ${TOML11_INCLUDE_DIRS})
