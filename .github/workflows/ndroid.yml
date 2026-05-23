@@ -1,38 +1,259 @@
-name: Build Android .so
+name: Build Turnip + lsfg-vk (X11 + SurfaceFlinger)
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create or update, e.g. v1.0.0'
+        required: true
+        default: '26.2.0'
+        type: string
+      mesa_version:
+        description: 'Mesa version (e.g., mesa-26.0.6)'
+        required: true
+        default: 'main'
+      api_override:
+        description: 'Vulkan API override version (e.g., 1.4.301)'
+        required: false
+        default: '1.4.301'
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [arm64-v8a, x86_64]
+        arch: [aarch64]
 
     steps:
+      - name: Install host build tools (pip meson 1.4.0)
+        run: |
+          sudo apt update
+          sudo apt install -y ninja-build pkg-config python3-mako python3-pip \
+            glslang-tools flex bison curl ca-certificates cmake
+          pip install --user meson==1.4.0
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Download and setup Android NDK (r27c)
+        run: |
+          NDK_VERSION="r27c"
+          NDK_ZIP="android-ndk-${NDK_VERSION}-linux.zip"
+          wget -q "https://dl.google.com/android/repository/${NDK_ZIP}"
+          unzip -q ${NDK_ZIP} -d /opt
+          echo "ANDROID_NDK_HOME=/opt/android-ndk-${NDK_VERSION}" >> $GITHUB_ENV
+          chmod +x /opt/android-ndk-${NDK_VERSION}/toolchains/llvm/prebuilt/linux-x86_64/bin/*
+
+      - name: Setup Termux sysroot (provides X11 libraries)
+        run: |
+          mkdir termux && cd termux
+          wget -q https://github.com/xodiosx/Wine-arm64ce/releases/download/wine-14/termux-rootfs.tar
+          tar xf termux-rootfs.tar
+          sudo mv data /data
+          sudo chown -R $(whoami):$(whoami) /data
+          mkdir -p /data/data/com.termux/files/usr/tmp
+          sudo chmod -R a+rX /data/data/com.termux/files/usr
+
+      - name: Provide android_lf.h to Termux sysroot
+        run: |
+          NDK_HEADER=$(find /opt/android-ndk-r27c -name android_lf.h -print -quit)
+          if [ -n "$NDK_HEADER" ]; then
+            sudo cp "$NDK_HEADER" /data/data/com.termux/files/usr/include/
+            echo "Copied $NDK_HEADER"
+          else
+            echo "WARNING: android_lf.h not found in NDK"
+            sudo touch /data/data/com.termux/files/usr/include/android_lf.h
+          fi
+
+      - name: Install X11 + SPIRV-Tools into Termux sysroot
+        run: |
+          mkdir -p /tmp/spirv-debs && cd /tmp/spirv-debs
+          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/libx/libxkbcommon/libxkbcommon_1.13.1_aarch64.deb"
+          wget -q "https://packages.termux.dev/apt/termux-main/pool/main/s/spirv-tools/spirv-tools_1.4.350.0_aarch64.deb"
+          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms-static/xcb-util-keysyms-static_0.4.1-1_aarch64.deb"
+          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms/xcb-util-keysyms_0.4.1-1_aarch64.deb"
+          wget -q "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/libxcb_1.17.0-1_aarch64.deb"
+          for deb in *.deb; do
+            dpkg-deb -x "$deb" /tmp/spirv-debs/extracted/
+          done
+          sudo cp -r /tmp/spirv-debs/extracted/data/data/com.termux/files/usr/* \
+                     /data/data/com.termux/files/usr/
+          sudo chmod -R 755 /data/data/com.termux/files/usr/lib
+          sudo chmod -R 755 /data/data/com.termux/files/usr/include
+
+      - name: Setup pkg-config wrapper (avoids host header conflicts)
+        run: |
+          sudo tee /usr/local/bin/termux-pkg-config > /dev/null << 'SCRIPT'
+          #!/bin/bash
+          export PKG_CONFIG_PATH=/data/data/com.termux/files/usr/lib/pkgconfig
+          /usr/bin/pkg-config "$@" | \
+            sed 's|-I/data/data/com.termux/files/usr/include|-idirafter /data/data/com.termux/files/usr/include|g'
+          SCRIPT
+          sudo chmod +x /usr/local/bin/termux-pkg-config
+
+      # ----------------------------------------------------------------------
+      # Turnip build (same as before)
+      # ----------------------------------------------------------------------
+      - name: Clone Mesa
+        run: |
+          git clone --depth 1 --branch ${{ github.event.inputs.mesa_version }} \
+            https://gitlab.freedesktop.org/mesa/mesa.git ~/mesa
+
+      - name: Apply essential Termux Bionic patches
+        run: |
+          cd ~/mesa
+          sed -i "s/dependency('libudev',/dependency('libudev', required : false, disabler : true, /g" meson.build
+          sed -i "s/has_header('libudev.h')/false/g" meson.build
+
+          apply_termux_patch() {
+            local patchfile="$1"
+            echo "Applying $patchfile..."
+            curl -sSfL "https://raw.githubusercontent.com/termux/termux-packages/master/packages/mesa/$patchfile" | patch -N -p1
+          }
+
+          #apply_termux_patch "0006-wsi-no-pthread_cancel.patch"
+          apply_termux_patch "0015-define-reallocarray.patch"
+          #apply_termux_patch "0014-replace-turnip-wait_timestamp_safe-assert.patch"
+          #apply_termux_patch "0016-unofficial_support_adreno_710_720.patch"
+          #apply_termux_patch "0018-disable-general-layout-in-zink-for-turnip.patch"
+          #if building for x11 patch pthread
+          #sed -i 's/pthread_mutex_lock(&dev->pipeline_mutex)/mtx_lock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
+          #sed -i 's/pthread_mutex_unlock(&dev->pipeline_mutex)/mtx_unlock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
+          echo "✔ All patches applied"
+
+      - name: Inject mock libudev header
+        run: |
+          sudo tee /data/data/com.termux/files/usr/include/libudev.h > /dev/null << 'EOF'
+          #ifndef MOCK_LIBUDEV_H
+          #define MOCK_LIBUDEV_H
+          #include <pthread.h>
+          #ifndef PTHREAD_CANCEL_ASYNCHRONOUS
+          #define PTHREAD_CANCEL_ASYNCHRONOUS 0
+          #endif
+          #ifndef PTHREAD_CANCEL_ENABLE
+          #define PTHREAD_CANCEL_ENABLE 1
+          #endif
+          static inline int pthread_setcanceltype(int type, int *oldtype) { return 0; }
+          static inline int pthread_setcancelstate(int state, int *oldstate) { return 0; }
+          static inline int pthread_cancel(pthread_t thread) { return 0; }
+          static inline void pthread_testcancel(void) {}
+          struct udev;
+          struct udev_device;
+          struct udev_monitor;
+          struct udev_enumerate;
+          static inline struct udev *udev_new(void) { return 0; }
+          static inline struct udev *udev_ref(struct udev *u) { return u; }
+          static inline void udev_unref(struct udev *u) {}
+          static inline struct udev_device *udev_device_new_from_syspath(struct udev *u, const char *p) { return 0; }
+          static inline struct udev_device *udev_device_ref(struct udev_device *d) { return d; }
+          static inline void udev_device_unref(struct udev_device *d) {}
+          static inline const char *udev_device_get_devnode(struct udev_device *d) { return 0; }
+          static inline const char *udev_device_get_property_value(struct udev_device *d, const char *p) { return 0; }
+          #endif
+          EOF
+          echo "✔ Mock libudev.h installed"
+
+      - name: Override Vulkan API version
+        if: github.event.inputs.api_override != ''
+        run: |
+          cd ~/mesa
+          VER="${{ github.event.inputs.api_override }}"
+          DEVFILE=$(find src/freedreno/vulkan -maxdepth 1 -name 'tu_device.*' -print -quit)
+          if [ -z "$DEVFILE" ]; then
+            echo "❌ Could not find tu_device file"
+            exit 1
+          fi
+          echo "Forcing Vulkan API version to $VER in $DEVFILE"
+          sed -i "0,/VK_API_VERSION_[0-9_]*/s//VK_API_VERSION_${VER//\./_}/" "$DEVFILE"
+
+      - name: Rename output library (optional)
+        run: |
+          cd ~/mesa
+          sed -i "s/'vulkan_freedreno'/'vulkan_freedreno'/g" src/freedreno/vulkan/meson.build
+          sed -i "/freedreno_icd = custom_target/,/)/{ s/install : true/install : false/ }" src/freedreno/vulkan/meson.build
+          echo "✔ Library renamed to libvulkan_freedreno.so"
+
+      - name: Create Meson cross file for ${{ matrix.arch }}
+        run: |
+          if [ "${{ matrix.arch }}" = "aarch64" ]; then
+            CPU_FAMILY="aarch64"
+            CPU="aarch64"
+            TARGET="aarch64-linux-android"
+          else
+            CPU_FAMILY="arm"
+            CPU="armv7l"
+            TARGET="armv7a-linux-androideabi"
+          fi
+          API=29
+          NDK_BIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cat > ~/cross_file.txt << EOF
+          [host_machine]
+          system = 'linux'
+          cpu_family = '${CPU_FAMILY}'
+          cpu = '${CPU}'
+          endian = 'little'
+
+          [binaries]
+          c = '${NDK_BIN}/${TARGET}${API}-clang'
+          cpp = '${NDK_BIN}/${TARGET}${API}-clang++'
+          ar = '${NDK_BIN}/llvm-ar'
+          strip = '${NDK_BIN}/llvm-strip'
+          pkg-config = 'termux-pkg-config'
+          EOF
+
+      - name: Configure Mesa (X11 + Android)
+        run: |
+          meson setup build ~/mesa \
+            --cross-file ~/cross_file.txt \
+            -Dvulkan-drivers=freedreno \
+            -Dgallium-drivers= \
+            -Dplatforms=android \
+            -Dplatform-sdk-version=29 \
+            -Dandroid-stub=true \
+            -Dandroid-libbacktrace=disabled \
+            -Dllvm=disabled \
+            -Dbuildtype=release \
+            -Dprefix=/usr \
+            -Dstrip=true \
+            -Dglx=disabled \
+            -Dgbm=disabled \
+            -Dopengl=false \
+            -Degl=disabled \
+            -Dgles1=disabled \
+            -Dgles2=disabled \
+            -Dfreedreno-kmds=msm,kgsl \
+            -Dxmlconfig=disabled \
+            -Dvalgrind=disabled
+
+      - name: Build Turnip
+        run: ninja -C build
+
+      # ----------------------------------------------------------------------
+      # lsfg-vk layer build
+      # ----------------------------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          path: lsfg-vk
 
-      - name: Set up NDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK
-        run: sdkmanager "ndk;28.0.13004108"
-
-      - name: Install CMake + Ninja
-        run: sudo apt-get install -y cmake ninja-build
-
-      - name: Configure (${{ matrix.abi }})
+      - name: Patch lsfg-vk (Termux paths)
+        working-directory: lsfg-vk
         run: |
-          cmake -B build-${{ matrix.abi }} \
+          find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.in" -o -name "*.spec" \) \
+            -exec grep -l "/tmp" {} \; 2>/dev/null | xargs sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g' 2>/dev/null || true
+          # Optional: replace image.cpp if needed
+          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/CMakeLists.txt -o CMakeLists.txt          
+          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/include/config/default_conf.hpp -o include/config/default_conf.hpp
+
+      - name: Configure lsfg-vk for Termux Bionic     
+        working-directory: lsfg-vk
+        run: |
+          
+          cmake -B build-arm64-v8a \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=${{ matrix.abi }} \
+            -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-28 \
             -DLSFGVK_ANDROID_WINE=ON \
             -DVOLK_STATIC_DEFINES=VK_USE_PLATFORM_ANDROID_KHR \
@@ -41,44 +262,52 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -G Ninja
 
-      - name: Build (${{ matrix.abi }})
-        run: ninja -C build-${{ matrix.abi }}
-
-      - name: Strip (${{ matrix.abi }})
+      - name: Build lsfg-vk
+        working-directory: lsfg-vk
         run: |
-          $ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip \
+          API=29
+          NDK_BIN="$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ninja -C build-arm64-v8a
+          ${NDK_BIN}/llvm-strip \
             --strip-unneeded \
-            -o build-${{ matrix.abi }}/liblsfg-vk-layer.so \
-            build-${{ matrix.abi }}/liblsfg-vk.so
+            -o build-arm64-v8a/liblsfg-vk-layer.so \
+            build-arm64-v8a/liblsfg-vk.so
+      
 
-      - name: Upload artifact (${{ matrix.abi }})
-        uses: actions/upload-artifact@v4
-        with:
-          name: liblsfg-vk-${{ matrix.abi }}
-          path: build-${{ matrix.abi }}/liblsfg-vk-${{ matrix.abi }}.so
+      # ----------------------------------------------------------------------
+      # Packaging & upload
+      # ----------------------------------------------------------------------
+      - name: Package Turnip artifact
+        run: |
+          mkdir -p turnip_out
+          if [ -f build/src/freedreno/vulkan/libvulkan_freedreno.so ]; then
+            cp build/src/freedreno/vulkan/libvulkan_freedreno.so turnip_out/
+          else
+            cp build/src/freedreno/vulkan/libvulkan_freedreno* turnip_out/
+          fi
+          tar -cJf turnip-${{ github.event.inputs.mesa_version }}-aarch64.tar.xz -C turnip_out .
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+      - name: Package lsfg-vk artifact
+        working-directory: lsfg-vk
+        run: |
+          mkdir -p lsfg_out
+          mkdir -p build-arm64-v8a/lib
+          mkdir -p build-arm64-v8a/etc/vulkan/implicit_layer.d/
+          cp -a build-arm64-v8a/liblsfg-vk-layer.so build-arm64-v8a/lib/
+          cp -a VkLayer_LS_frame_generation.json build-arm64-v8a/etc/vulkan/implicit_layer.d/
+          cp -a build-arm64-v8a/lib lsfg_out/ 
+          cp -a build-arm64-v8a/etc lsfg_out/ 
+          #cp -a build-arm64-v8a/* lsfg_out/ 2>/dev/null || \
+          #cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/build-arm64-v8a/* lsfg_out/
+          tar -cJf ../lsfg-vk-aarch64.tar.xz -C lsfg_out .
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: List release assets
-        run: ls -lh release-assets/
-
-      - name: Create GitHub Release
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*.so
-          generate_release_notes: true
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.tag }}
+          files: |
+            turnip-*.tar.xz
+            lsfg-vk-*.tar.xz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
