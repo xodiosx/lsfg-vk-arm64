@@ -69,11 +69,15 @@ jobs:
       - name: Install X11 + SPIRV-Tools into Termux sysroot
         run: |
           mkdir -p /tmp/spirv-debs && cd /tmp/spirv-debs
-          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/libx/libxkbcommon/libxkbcommon_1.13.1_aarch64.deb"
-          wget -q "https://packages.termux.dev/apt/termux-main/pool/main/s/spirv-tools/spirv-tools_1.4.350.0_aarch64.deb"
-          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms-static/xcb-util-keysyms-static_0.4.1-1_aarch64.deb"
-          wget -q "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms/xcb-util-keysyms_0.4.1-1_aarch64.deb"
-          wget -q "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/libxcb_1.17.0-1_aarch64.deb"
+          
+          WGET_OPTS="-q -nd -r -l1 --no-parent"
+          
+          wget $WGET_OPTS -A 'libxkbcommon_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/libx/libxkbcommon/"
+          wget $WGET_OPTS -A 'spirv-tools_*_aarch64.deb' "https://packages.termux.dev/apt/termux-main/pool/main/s/spirv-tools/"
+          wget $WGET_OPTS -A 'xcb-util-keysyms-static_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms-static/"
+          wget $WGET_OPTS -A 'xcb-util-keysyms_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms/"
+          wget $WGET_OPTS -A 'libxcb_*_aarch64.deb' "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/"
+
           for deb in *.deb; do
             dpkg-deb -x "$deb" /tmp/spirv-debs/extracted/
           done
@@ -243,14 +247,10 @@ jobs:
         run: |
           find . -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.in" -o -name "*.spec" \) \
             -exec grep -l "/tmp" {} \; 2>/dev/null | xargs sed -i 's|/tmp/|/data/data/com.termux/files/usr/tmp/|g' 2>/dev/null || true
-          # Optional: replace image.cpp if needed
-          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/CMakeLists.txt -o CMakeLists.txt          
-          #curl -L https://raw.githubusercontent.com/xodiosx/lsfg-vk-android/refs/heads/release/include/config/default_conf.hpp -o include/config/default_conf.hpp
 
       - name: Configure lsfg-vk for Termux Bionic     
         working-directory: lsfg-vk
         run: |
-          
           cmake -B build-arm64-v8a \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=arm64-v8a \
@@ -273,7 +273,6 @@ jobs:
             -o build-arm64-v8a/liblsfg-vk-layer.so \
             build-arm64-v8a/liblsfg-vk.so
       
-
       # ----------------------------------------------------------------------
       # Packaging & upload
       # ----------------------------------------------------------------------
@@ -297,8 +296,6 @@ jobs:
           cp -a VkLayer_LS_frame_generation.json build-arm64-v8a/etc/vulkan/implicit_layer.d/
           cp -a build-arm64-v8a/lib lsfg_out/ 
           cp -a build-arm64-v8a/etc lsfg_out/ 
-          #cp -a build-arm64-v8a/* lsfg_out/ 2>/dev/null || \
-          #cp -a /home/runner/work/lsfg-vk-android/lsfg-vk-android/lsfg-vk/build-arm64-v8a/* lsfg_out/
           tar -cJf ../lsfg-vk-aarch64.tar.xz -C lsfg_out .
 
       - name: Upload release assets
