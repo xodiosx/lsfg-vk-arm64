@@ -70,17 +70,30 @@ jobs:
         run: |
           mkdir -p /tmp/spirv-debs && cd /tmp/spirv-debs
           
-          WGET_OPTS="-q -nd -r -l1 --no-parent"
-          
-          wget $WGET_OPTS -A 'libxkbcommon_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/libx/libxkbcommon/"
-          wget $WGET_OPTS -A 'spirv-tools_*_aarch64.deb' "https://packages.termux.dev/apt/termux-main/pool/main/s/spirv-tools/"
-          wget $WGET_OPTS -A 'xcb-util-keysyms-static_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms-static/"
-          wget $WGET_OPTS -A 'xcb-util-keysyms_*_aarch64.deb' "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms/"
-          wget $WGET_OPTS -A 'libxcb_*_aarch64.deb' "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/"
+          fetch_deb() {
+            local pkg=$1
+            local url=$2
+            # Extract the precise filename from the index page
+            local file=$(curl -sL "$url" | grep -oE "${pkg}_[^\"<>]+_aarch64\.deb" | head -n 1)
+            if [ -z "$file" ]; then
+              echo "❌ Failed to find $pkg at $url"
+              exit 1
+            fi
+            echo "⬇️ Downloading $file..."
+            wget -q "${url}${file}"
+          }
+
+          fetch_deb "libxkbcommon" "https://packages.termux.dev/apt/termux-x11/pool/main/libx/libxkbcommon/"
+          fetch_deb "spirv-tools" "https://packages.termux.dev/apt/termux-main/pool/main/s/spirv-tools/"
+          fetch_deb "xcb-util-keysyms-static" "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms-static/"
+          fetch_deb "xcb-util-keysyms" "https://packages.termux.dev/apt/termux-x11/pool/main/x/xcb-util-keysyms/"
+          fetch_deb "libxcb" "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/"
 
           for deb in *.deb; do
+            echo "📦 Extracting $deb..."
             dpkg-deb -x "$deb" /tmp/spirv-debs/extracted/
           done
+          
           sudo cp -r /tmp/spirv-debs/extracted/data/data/com.termux/files/usr/* \
                      /data/data/com.termux/files/usr/
           sudo chmod -R 755 /data/data/com.termux/files/usr/lib
@@ -116,14 +129,7 @@ jobs:
             curl -sSfL "https://raw.githubusercontent.com/termux/termux-packages/master/packages/mesa/$patchfile" | patch -N -p1
           }
 
-          #apply_termux_patch "0006-wsi-no-pthread_cancel.patch"
           apply_termux_patch "0015-define-reallocarray.patch"
-          #apply_termux_patch "0014-replace-turnip-wait_timestamp_safe-assert.patch"
-          #apply_termux_patch "0016-unofficial_support_adreno_710_720.patch"
-          #apply_termux_patch "0018-disable-general-layout-in-zink-for-turnip.patch"
-          #if building for x11 patch pthread
-          #sed -i 's/pthread_mutex_lock(&dev->pipeline_mutex)/mtx_lock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
-          #sed -i 's/pthread_mutex_unlock(&dev->pipeline_mutex)/mtx_unlock(\&dev->pipeline_mutex)/g' src/freedreno/vulkan/tu_shader.cc
           echo "✔ All patches applied"
 
       - name: Inject mock libudev header
